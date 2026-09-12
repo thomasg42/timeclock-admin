@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#070b14">
+<title>JustUs Entertainment TimeClock — Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Bowlby+One+SC&family=IBM+Plex+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- BUMP ?v= ON EVERY DEPLOY. This token sat at 20260809 for weeks, so phones
+     kept serving a stale app.js and never saw a single deploy after Aug 9 —
+     fixes looked live on the server and were invisible on the actual phone. -->
+<link rel="stylesheet" href="styles.css?v=20260910-admin-split">
+<link rel="stylesheet" href="clock-flow.css?v=20260910-admin-split">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x23F1;</text></svg>">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="topbar-back hidden" id="backBtn" type="button" aria-label="Back">&#8592;</button>
+  <button class="brand" id="brandHome" type="button">
+    <span class="brand-punch"></span>
+    <span class="brand-text">JUSTUS <em>ENTERTAINMENT</em></span>
+  </button>
+  <div class="topbar-right">
+    <span id="liveClock" class="live-clock">--:--:--</span>
+    <button class="topbar-admin hidden" id="adminMenuBtn" type="button" aria-label="Admin options">&#9881; ADMIN</button>
+  </div>
+</header>
+
+<main id="app">
+
+  <!-- ============ HOME ============ -->
+  <section class="view" id="view-home">
+    <div class="ticket-edge" aria-hidden="true"></div>
+    <div class="hero">
+      <div class="hero-date" id="heroDate">—</div>
+      <div class="hero-clock" id="heroClock">--:--</div>
+      <div class="hero-ampm" id="heroAmpm"></div>
+    </div>
+    <div class="section-head waiting-head">
+      <h3 class="section-label">WAITING ROOM</h3>
+      <button type="button" class="chip-btn" id="waitReload">REFRESH</button>
+    </div>
+    <p class="event-hint muted center">Anyone who tapped CLOCK IN on the employee app is listed here.
+      Check they are actually standing in front of you, then hit CLOCK IN. That stamp is their start time.</p>
+    <div id="waitList" class="waiting-list"><p class="muted center">Loading the waiting room&hellip;</p></div>
+
+    <div class="home-actions">
+      <button class="big-btn primary" id="btnGoSelect" type="button">
+        <span class="big-btn-title">CLOCK MYSELF IN / OUT</span>
+        <span class="big-btn-sub">Admins clock themselves &mdash; no approval, no selfie</span>
+      </button>
+      <button class="big-btn outline" id="btnGoCreate" type="button">
+        <span class="big-btn-title">CREATE PROFILE</span>
+        <span class="big-btn-sub">Add a new admin or worker</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- ============ CREATE PROFILE ============ -->
+  <section class="view hidden" id="view-create">
+    <h2 class="view-title">NEW <em>PROFILE</em></h2>
+    <form id="createForm" class="card form-card" autocomplete="on">
+      <label>First name<input type="text" id="cpFirst" required autocomplete="given-name"></label>
+      <label>Last name<input type="text" id="cpLast" required autocomplete="family-name"></label>
+      <label>Date of birth<input type="date" id="cpDob" required></label>
+      <label>Email<input type="email" id="cpEmail" required autocomplete="email" placeholder="you@email.com"></label>
+      <label>Phone<input type="tel" id="cpPhone" required autocomplete="tel" placeholder="(406) 555-0100"></label>
+      <button class="big-btn primary" id="cpSubmit" type="submit"><span class="big-btn-title">CREATE PROFILE</span></button>
+      <p class="form-err hidden" id="cpErr"></p>
+    </form>
+  </section>
+
+  <!-- ============ SELECT PROFILE ============ -->
+  <section class="view hidden" id="view-select">
+    <h2 class="view-title">WHO'S <em>WORKING?</em></h2>
+    <div id="profileList" class="profile-list">
+      <p class="muted center" id="profileListMsg">Loading crew…</p>
+    </div>
+  </section>
+
+  <!-- ============ PROFILE / PUNCH ============ -->
+  <section class="view hidden" id="view-profile">
+    <div class="profile-head">
+      <div class="punch-hole" aria-hidden="true"></div>
+      <h2 class="worker-name" id="pfName">—</h2>
+      <div class="worker-meta" id="pfMeta"></div>
+    </div>
+
+    <!-- top center action -->
+    <div id="pfAction" class="pf-action"></div>
+
+    <!-- only rendered for crew an admin has switched ON for event creation -->
+    <div id="pfCreateEvent" class="pf-create-event hidden"></div>
+
+    <h3 class="section-label">SHIFT HISTORY</h3>
+    <div id="pfHistory" class="history-list">
+      <p class="muted center">Loading…</p>
+    </div>
+  </section>
+
+  <!-- ============ ADMIN ============ -->
+  <section class="view hidden" id="view-admin">
+    <!-- PIN gate -->
+    <div id="adminGate">
+      <h2 class="view-title">ADMIN <em>ACCESS</em></h2>
+      <div class="pin-dots" id="pinDots"><i></i><i></i><i></i><i></i></div>
+      <div class="pin-pad" id="pinPad">
+        <button type="button">1</button><button type="button">2</button><button type="button">3</button>
+        <button type="button">4</button><button type="button">5</button><button type="button">6</button>
+        <button type="button">7</button><button type="button">8</button><button type="button">9</button>
+        <span></span><button type="button">0</button><button type="button" data-k="del">⌫</button>
+      </div>
+      <p class="form-err hidden center" id="pinErr">Wrong code</p>
+    </div>
+
+    <!-- dashboard -->
+    <div id="adminDash" class="hidden">
+      <div class="admin-context-tag">★ BACKSTAGE COMMAND CENTER ★</div>
+      <h2 class="view-title">DAY <em>SHEET</em></h2>
+      <div class="admin-controls">
+        <input type="date" id="adminDate">
+        <button class="chip-btn" id="adminRefresh" type="button">REFRESH</button>
+        <button class="chip-btn primary" id="adminNewEvent" type="button">+ CREATE EVENT</button>
+      </div>
+      <div class="sheet-wrap">
+        <table class="sheet" id="adminSheet">
+          <thead><tr>
+            <th>Employee</th><th>Event</th><th>Clock In</th><th>Break Start</th><th>Break End</th>
+            <th>Break</th><th>Clock Out</th><th>Hours</th><th>Selfie</th><th>Delete</th>
+          </tr></thead>
+          <tbody id="adminRows"><tr><td colspan="10" class="muted center">Loading…</td></tr></tbody>
+        </table>
+      </div>
+
+      <h3 class="section-label">CREW &amp; WEEKLY TIME SHEETS</h3>
+      <div class="crew-owner">
+        <span class="field-label">Business owner email(s)</span>
+        <div class="wiz-job-row">
+          <label class="sr-only" for="ownerEmails">Business owner emails</label>
+          <input type="text" id="ownerEmails" placeholder="owner@business.com, you@business.com" autocomplete="email">
+          <button type="button" class="chip-btn primary" id="ownerEmailsSave">SAVE</button>
+        </div>
+        <p class="field-note muted">Separate multiple addresses with commas.</p>
+        <div id="ownerEmailsSaved" class="saved-box"></div>
+        <div class="wiz-job-row" style="margin-top:.6rem">
+          <button type="button" class="chip-btn primary" id="sendSheetNow">EMAIL THIS WEEK'S SHEET NOW</button>
+        </div>
+        <p class="field-note muted" id="sendSheetNote">Sends the full crew sheet — every person's shifts, hours and clock-in photo — to the owner and to everyone who signed up with an email address.</p>
+      </div>
+      <p class="event-hint muted center">Pay week runs Wednesday → Tuesday. The full crew sheet goes out automatically every Tuesday at 11:30 PM Mountain, to the owner and to every employee who entered an email address.</p>
+      <div id="adminCrew" class="crew-list"></div>
+
+      <div class="section-head">
+        <h3 class="section-label">EVENTS</h3>
+        <button type="button" class="chip-btn primary" id="eventsSave">SAVE</button>
+      </div>
+      <div class="event-tabs" id="eventTabs" role="tablist">
+        <button type="button" class="event-tab on" data-tab="active">ACTIVE</button>
+        <button type="button" class="event-tab" data-tab="archived">ARCHIVE</button>
+      </div>
+      <p class="event-hint muted center">Every event you have ever made is listed here. Tap one for details + policies. DELETE marks it to go — nothing leaves the server until you hit SAVE.</p>
+      <p class="field-note hidden" id="eventsPending"></p>
+      <div id="adminEvents" class="event-list"></div>
+      <!-- Second SAVE under the list: on a phone the one in the section header
+           scrolls out of reach long before you have finished marking rows. -->
+      <div class="events-save-bottom">
+        <button type="button" class="chip-btn" id="eventsSaveBottom">SAVE</button>
+        <p class="field-note muted">Marked events only leave the server when you hit SAVE.</p>
+      </div>
+
+      <!-- Week-by-week record, for reading hours without going to email -->
+      <div class="section-head">
+        <h3 class="section-label">WEEK BY WEEK</h3>
+        <button type="button" class="chip-btn" id="weekReload">REFRESH</button>
+      </div>
+      <div class="week-nav">
+        <button type="button" class="chip-btn" id="weekPrev">← EARLIER</button>
+        <span class="week-label" id="weekLabel">—</span>
+        <button type="button" class="chip-btn" id="weekNext">LATER →</button>
+      </div>
+      <div id="weekBody" class="week-body"><p class="muted center">Open a week to see everyone's hours.</p></div>
+
+      <form id="eventForm" class="card form-card hidden">
+        <div class="form-card-head">
+          <h3 class="card-title" id="eventFormTitle">NEW EVENT</h3>
+          <button type="button" class="form-collapse" id="eventFormCollapse" aria-label="Close new event form" title="Close">⌃</button>
+        </div>
+        <div class="field-block">
+          <span class="field-label">Choose event</span>
+          <div class="template-chips" id="evTemplates"></div>
+          <label class="sr-only" for="evName">Event name</label>
+          <input type="text" id="evName" required placeholder="Type a new event — e.g. Wildlands" autocomplete="off">
+          <p class="field-note muted">Saved events show as chips above (newest first). Tap to select. Double-tap / double-click a chip to delete it (asks yes first). Type a new name to create another — it sticks at the top after Create Event.</p>
+        </div>
+        <div class="field-block">
+          <span class="field-label">Policies that apply</span>
+          <div class="policy-checks" id="evPolicyChecks"></div>
+          <p class="field-note muted">Check every pack that applies. This event remembers them — you won’t re-pick next time.</p>
+        </div>
+        <div class="field-block">
+          <span class="field-label">How long</span>
+          <div class="duration-chips" id="evDurationChips">
+            <button type="button" class="dur-chip" data-dur="today">Today</button>
+            <button type="button" class="dur-chip" data-dur="tomorrow">Next day</button>
+            <button type="button" class="dur-chip" data-dur="weekend">Weekend</button>
+            <button type="button" class="dur-chip" data-dur="week">This week</button>
+            <button type="button" class="dur-chip on" data-dur="custom">Custom</button>
+          </div>
+          <div class="cal-wrap">
+            <div class="cal-nav">
+              <button type="button" class="chip-btn" id="calPrev" aria-label="Previous month">‹</button>
+              <span id="calTitle" class="cal-title">—</span>
+              <button type="button" class="chip-btn" id="calNext" aria-label="Next month">›</button>
+            </div>
+            <div class="cal-grid" id="calGrid"></div>
+            <p class="cal-range" id="calRange">Tap a start day, then an end day.</p>
+          </div>
+          <div class="time-row">
+            <div class="time-picker" id="tpStart" data-default="10:00">
+              <span class="field-label">Start time</span>
+              <div class="tp-wheels" aria-label="Start time wheels">
+                <div class="tp-col" data-part="hour"></div>
+                <div class="tp-colon">:</div>
+                <div class="tp-col" data-part="min"></div>
+                <div class="tp-col tp-ampm" data-part="ampm"></div>
+              </div>
+              <input type="text" class="tp-type" id="evStartType" inputmode="text" placeholder="Type e.g. 10:00 AM" autocomplete="off">
+            </div>
+            <div class="time-picker" id="tpEnd" data-default="22:00">
+              <span class="field-label">End time</span>
+              <div class="tp-wheels" aria-label="End time wheels">
+                <div class="tp-col" data-part="hour"></div>
+                <div class="tp-colon">:</div>
+                <div class="tp-col" data-part="min"></div>
+                <div class="tp-col tp-ampm" data-part="ampm"></div>
+              </div>
+              <input type="text" class="tp-type" id="evEndType" inputmode="text" placeholder="Type e.g. 10:00 PM" autocomplete="off">
+            </div>
+          </div>
+        </div>
+        <div class="field-block">
+          <span class="field-label">Send report to</span>
+          <div class="email-selected" id="evEmailSelected"></div>
+          <div class="email-add-row">
+            <input type="email" id="evOwnerInput" list="evEmailList" placeholder="Type an email and add" autocomplete="email">
+            <button type="button" class="chip-btn primary" id="evOwnerAdd">ADD</button>
+          </div>
+          <datalist id="evEmailList"></datalist>
+          <div class="email-chips" id="evEmailChips"></div>
+          <p class="field-note muted">Tap chips to toggle. Add as many owners as need the sheet — reports go to all of them.</p>
+        </div>
+        <button class="big-btn primary" type="submit"><span class="big-btn-title" id="eventFormSubmitLabel">CREATE EVENT</span></button>
+        <p class="form-err hidden" id="evErr"></p>
+      </form>
+    </div>
+  </section>
+</main>
+
+<!-- ============ EVENT DETAIL ============ -->
+<div class="modal hidden" id="eventModal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <span class="step-tag" id="evDetailTag">EVENT</span>
+      <button class="x-btn" id="evDetailClose" type="button">✕</button>
+    </div>
+    <div id="evDetailBody"></div>
+  </div>
+</div>
+
+<!-- ============ CLOCK-IN WIZARD ============ -->
+<div class="modal hidden" id="wizard">
+  <div class="modal-card">
+    <div class="modal-head">
+      <span id="wizStep" class="step-tag">STEP 1/5</span>
+      <button class="x-btn" id="wizClose" type="button">✕</button>
+    </div>
+    <div id="wizBody"></div>
+  </div>
+</div>
+
+<!-- ============ CONFIRM DIALOG ============ -->
+<div class="modal hidden" id="confirmModal">
+  <div class="modal-card small">
+    <h3 id="confirmTitle" class="confirm-title">Are you sure?</h3>
+    <p id="confirmText" class="confirm-text"></p>
+    <div class="confirm-actions">
+      <button class="big-btn outline" id="confirmNo" type="button"><span class="big-btn-title">NO</span></button>
+      <button class="big-btn primary" id="confirmYes" type="button"><span class="big-btn-title">YES</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SHIFT SUMMARY ============ -->
+<div class="modal hidden" id="summaryModal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <span class="step-tag stamp-out">SHIFT COMPLETE</span>
+      <button class="x-btn" id="summaryClose" type="button">✕</button>
+    </div>
+    <div id="summaryBody"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="config.js"></script>
+<script src="app.js?v=20260910-admin-split"></script>
+</body>
+</html>
