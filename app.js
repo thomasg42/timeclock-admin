@@ -318,12 +318,20 @@
     if (!slot) return;
     slot.classList.add('hidden');
     slot.innerHTML = '';
-    let allowed = false;
-    try {
-      allowed = rows(await api('tc-crew-flags'))
-        .some((f) => String(f.profile_id) === String(profile.id) && f.can_create_events === true);
-    } catch { return; }
-    if (!allowed) return;
+
+    /* Thomas, 2026-09-15: "anybody that taps into the self-clock-in just
+       automatically gets all the permissions, pretty much."
+
+       This is the ADMIN app — every screen in it already sits behind the PIN,
+       so anyone standing here is trusted by definition and the per-person
+       can_create_events flag was gating people who had already proved they
+       hold the code. It is checked NO LONGER ON THIS APP.
+
+       Deliberately NOT done: writing that flag to the server to "grant" it.
+       tc_crew_flags governs the EMPLOYEE app, where there is no PIN — quietly
+       flipping it here would widen someone's access on a screen they are not
+       even standing in front of. Trust inside the PIN stays inside the PIN.
+       Deleting an event is still admin-only, exactly as before. */
 
     /* A real form with native date/time pickers, not five window.prompt boxes.
        Prompts could only ever describe ONE day, and an event that runs Friday
@@ -579,6 +587,7 @@
       $('wizStep').textContent = 'STEP 1 — JOB';
       body.innerHTML = '<div class="wiz-title">WHAT\'S THIS JOB FOR?</div><div class="wiz-sub">Checking today\'s events…</div>';
       let events = [];
+      let allEvents = [];
       try {
         meta = loadMeta();
         await (metaSyncReady || Promise.resolve());
@@ -588,8 +597,9 @@
         // into next Saturday's gig today. An event is offered only while the
         // clock is actually inside its window.
         const now = Date.now();
-        events = rows(await api('tc-events')).map(applyEventEdit).filter((ev) => {
-          if (isMetaEvent(ev) || isDeleted(ev.id) || isArchived(ev.id)) return false;
+        allEvents = rows(await api('tc-events')).map(applyEventEdit)
+          .filter((ev) => !isMetaEvent(ev) && !isDeleted(ev.id) && !isArchived(ev.id));
+        events = allEvents.filter((ev) => {
           const startsAt = Date.parse(ev.start_at || '');
           const endsAt = Date.parse(ev.end_at || '');
           if (!Number.isFinite(startsAt) || !Number.isFinite(endsAt)) return false;
@@ -597,23 +607,54 @@
         });
       } catch { /* couldn't reach the schedule — the empty state below says so */ }
 
-      /* Clocking in is TAP-ONLY, and only ACTIVE events are offered (Thomas,
-         2026-08-26). No text box and no saved-event chips: both could put a
-         worker on a job that is not running, and a typed one created an ad-hoc
-         event carrying no policy packs — one typo split a crew's hours across
-         two names on the time sheet. If nothing is live, nothing is offered.
-         Creating an event belongs in Create Event, to whoever is permitted. */
-      const sub = events.length
-        ? 'Tap the event you\'re working.'
-        : 'Nothing is running right now.';
+      /* THE HISTORY HERE MATTERS — read before changing it again.
+         2026-08-26: clocking in was made TAP-ONLY with only ACTIVE events
+         offered. Saved-event chips and a free-text box were both pulled,
+         because a typed job created an ad-hoc event carrying no policy packs
+         and ONE TYPO SPLIT A CREW'S HOURS ACROSS TWO NAMES on the time sheet.
+
+         2026-09-15, Thomas, knowing that history: the four standing events are
+         back as FIXED chips — always tappable, never typed. That keeps what
+         actually caused the incident (free text in the clock-in flow) out,
+         while letting anyone tap straight onto a regular job without waiting
+         for someone to create the event first.
+
+         The two guards that make this safe:
+           1. A chip's name comes from STANDING_EVENTS, never from a keyboard,
+              so it cannot be misspelled into a second column on the sheet.
+           2. Tapping a chip whose event is not currently running CREATES A
+              REAL EVENT ROW for tonight rather than punching into a ghost, so
+              the hours attach to a real job that carries its policy packs
+              (policiesForEvent resolves them from the template by name).
+         Free text still exists — but only behind CREATE NEW EVENT below. */
+      const standing = STANDING_EVENTS.filter(
+        (name) => !events.some((ev) => sameEventName(ev.name, name)),
+      );
+
       body.innerHTML = `
         <div class="wiz-title">WHAT'S THIS JOB FOR?</div>
-        <div class="wiz-sub">${sub}</div>
-        ${events.length
-          ? '<div class="wiz-events" id="wizEvents"></div>'
-          : `<p class="form-err center">No job is active right now, so there is nothing to clock into.
-             A job only appears here while it is running. If you should be working, ask whoever runs
-             the schedule to create the event under CREATE EVENT.</p>`}`;
+        <div class="wiz-sub">${events.length
+          ? 'Tap the event you\'re working.'
+          : 'Nothing is scheduled right now — tap the job you\'re on.'}</div>
+        ${events.length ? `
+          <div class="wiz-group-label">LIVE NOW</div>
+          <div class="wiz-events" id="wizEvents"></div>` : ''}
+        ${standing.length ? `
+          <div class="wiz-group-label">STANDING EVENTS</div>
+          <div class="wiz-standing" id="wizStanding"></div>` : ''}
+        <button type="button" class="wiz-newevent-toggle" id="wizNewToggle"
+                aria-expanded="false" aria-controls="wizNewForm">
+          ＋ CREATE NEW EVENT
+        </button>
+        <div class="wiz-newevent hidden" id="wizNewForm">
+          <label class="sr-only" for="wizNewName">New event name</label>
+          <input type="text" id="wizNewName" maxlength="60" autocomplete="off"
+                 placeholder="Type a new event — e.g. Maintenance at Midtown">
+          <button type="button" class="chip-btn primary" id="wizNewGo">CREATE &amp; CLOCK IN</button>
+          <p class="field-note muted">Only for a job that is not one of the standing events.
+            It runs from now until 6 AM and everyone will see it on the clock-in list.</p>
+          <p class="form-err hidden" id="wizNewErr"></p>
+        </div>`;
 
       // Admins are trusted (Thomas, 2026-09-10): no selfie step on this app.
       // Step 1 is the camera; jumping to 2 lands on policies / CLOCK IN NOW.
@@ -632,6 +673,68 @@
           b.onclick = () => choose(ev);
           list.appendChild(b);
         });
+      }
+
+      const standingBox = $('wizStanding');
+      if (standingBox) {
+        standing.forEach((name) => {
+          const packs = policiesForEvent({ id: '', name });
+          const packLabel = packs.length ? packs.map((p) => p.title).join(' + ') : 'No policies set';
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'standing-chip';
+          b.innerHTML = `<span class="standing-chip-name">${esc(name)}</span>
+            <span class="standing-chip-sub">${esc(packLabel)}</span>`;
+          b.onclick = async () => {
+            if (b.disabled) return;
+            b.disabled = true;
+            b.classList.add('is-working');
+            try {
+              const ev = await ensureStandingEvent(name, allEvents);
+              choose(ev);
+            } catch {
+              b.disabled = false;
+              b.classList.remove('is-working');
+              toast('Couldn\'t start that job — check the connection and try again.', true);
+            }
+          };
+          standingBox.appendChild(b);
+        });
+      }
+
+      const newToggle = $('wizNewToggle');
+      const newForm = $('wizNewForm');
+      if (newToggle && newForm) {
+        newToggle.onclick = () => {
+          const open = newForm.classList.toggle('hidden') === false;
+          newToggle.setAttribute('aria-expanded', String(open));
+          newToggle.classList.toggle('is-open', open);
+          if (open) $('wizNewName').focus();
+        };
+        $('wizNewGo').onclick = async () => {
+          const err = $('wizNewErr');
+          const name = String($('wizNewName').value || '').trim();
+          err.classList.add('hidden');
+          if (name.length < 2) {
+            err.textContent = 'Give the job a name first.';
+            err.classList.remove('hidden');
+            return;
+          }
+          // A typed name that matches a standing event is folded onto it rather
+          // than creating a near-duplicate — that is the split-hours bug.
+          const match = STANDING_EVENTS.find((n) => sameEventName(n, name));
+          const go = $('wizNewGo');
+          go.disabled = true;
+          go.textContent = 'CREATING…';
+          try {
+            choose(await ensureStandingEvent(match || name, allEvents));
+          } catch {
+            go.disabled = false;
+            go.textContent = 'CREATE & CLOCK IN';
+            err.textContent = 'Couldn\'t create that event — check the connection.';
+            err.classList.remove('hidden');
+          }
+        };
       }
 
       return;
@@ -1470,6 +1573,93 @@
       saveMeta(meta);
     }
   }
+  /* ---------- standing events (Thomas, 2026-09-15) ----------
+
+     The four jobs that come round again and again. They are a FIXED list, not
+     user input: the clock-in flow renders them as chips so nobody has to type
+     a job name, which is what split a crew's hours across two columns back in
+     August. Renaming one here renames it everywhere it is offered.
+
+     Order is the order they appear on the clock-in screen. */
+  const STANDING_EVENTS = [
+    'PBR / Rodeo — Big Sky',
+    'Wildlands',
+    'Music in the mountains',
+    'Rbar',
+  ];
+
+  /* Event names are compared loosely on purpose: the standing list carries an
+     em dash and real rows have been typed with a hyphen, and case and spacing
+     drift. Without this, "Rbar" and "R Bar" become two jobs on the time sheet —
+     exactly the failure this whole design is guarding against. */
+  function sameEventName(a, b) {
+    // Every non-alphanumeric character is DROPPED, not turned into a space:
+    // "Rbar" and "R Bar" have to collapse to the same key, and so do
+    // "PBR / Rodeo — Big Sky" and "pbr rodeo big sky". Normalising to spaces
+    // instead left "rbar" != "r bar", which is the exact near-miss that opens
+    // a second column on the time sheet.
+    const norm = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    return norm(a) === norm(b) && norm(a) !== '';
+  }
+
+  /**
+   * Hand back a REAL event row to clock into for `name`.
+   *
+   * Reuses one that is already running under that name — so two people tapping
+   * the same chip five minutes apart land on the SAME event and their hours
+   * group together, rather than each creating their own near-duplicate.
+   *
+   * Only when nothing is running does it create a row, from now until the next
+   * 6 AM (these are night jobs; ending at midnight would expire the event
+   * mid-shift and strand whoever clocked in). Policy packs are not copied here
+   * on purpose — policiesForEvent resolves them from the template by name, so
+   * a standing event keeps whatever packs it has always carried.
+   */
+  async function ensureStandingEvent(name, known = []) {
+    const now = Date.now();
+    const covering = (list) => list.find((ev) => {
+      if (!sameEventName(ev.name, name)) return false;
+      const startsAt = Date.parse(ev.start_at || '');
+      const endsAt = Date.parse(ev.end_at || '');
+      return Number.isFinite(startsAt) && Number.isFinite(endsAt)
+        && startsAt <= now && now <= endsAt;
+    });
+
+    const fromKnown = covering(known);
+    if (fromKnown) return fromKnown;
+
+    // Re-read before creating. Another admin may have started this job on
+    // their own phone seconds ago, and the list this screen loaded is stale.
+    let fresh = [];
+    try {
+      fresh = rows(await api('tc-events')).map(applyEventEdit)
+        .filter((ev) => !isMetaEvent(ev) && !isDeleted(ev.id) && !isArchived(ev.id));
+    } catch { /* fall through to create */ }
+    const fromFresh = covering(fresh);
+    if (fromFresh) return fromFresh;
+
+    const end = new Date(now);
+    end.setSeconds(0, 0);
+    if (end.getHours() >= 6) end.setDate(end.getDate() + 1);
+    end.setHours(6, 0, 0, 0);
+
+    const created = await api('tc-events', {
+      method: 'POST',
+      body: JSON.stringify({
+        pass: adminPinOk,
+        creator_id: current.profile ? current.profile.id : '',
+        name,
+        start_at: localISO(new Date(now)),
+        end_at: localISO(end),
+        owner_email: '',
+      }),
+    });
+    const row = Array.isArray(created) ? created[0] : created;
+    if (!row || row.id == null) throw new Error('event create returned no row');
+    markCreated(row.id);
+    return applyEventEdit(row);
+  }
+
   function policiesForEvent(ev) {
     const id = String(ev && ev.id != null ? ev.id : '');
     const fromEdit = meta.eventEdits && meta.eventEdits[id] && meta.eventEdits[id].policyKeys;
@@ -1481,6 +1671,11 @@
     const tpl = meta.templates.find((t) => t.name.toLowerCase() === String(ev.name || '').toLowerCase());
     if (tpl && tpl.policyKeys.length) return tpl.policyKeys.map((k) => POLICY_PACKS[k]).filter(Boolean);
     if (/\bpbr\b|rodeo/i.test(ev.name || '')) return [POLICY_PACKS.general, POLICY_PACKS.pbr];
+    // A standing job always carries at least the general handbook, even on a
+    // device that has never seen its template. Templates are not seeded, so
+    // without this a standing chip could clock someone in under no policies at
+    // all — silently, which is how the August version of this bug travelled.
+    if (STANDING_EVENTS.some((n) => sameEventName(n, ev.name))) return [POLICY_PACKS.general];
     return [];
   }
   function isArchived(id) { return !!meta.archived[String(id)]; }
@@ -3372,6 +3567,9 @@
     // The real functions, not test-only wrappers — a hook that reimplements the
     // path it is meant to check proves nothing.
     startWizard, renderCreateEventAccess,
+    // Exposed so a test can assert the packs a standing event actually
+    // resolves to, rather than trusting the label rendered on the chip.
+    policiesForEvent, ensureStandingEvent, sameEventName, STANDING_EVENTS,
     // The real wizard object and the real renderer, so a test can step past the
     // camera (which no headless DOM can drive) without faking the punch path.
     renderWizard, get wiz() { return wiz; },
