@@ -101,8 +101,17 @@ body:has(#view-profile:not(.hidden))::after {
 
 #wizard .policy-block h4,
 #wizard .policy-full h5,
+#wizard .policy-group h6,
 #wizard .wiz-scroll-hint.ready {
   color: #0b6fae;
+}
+#wizard .policy-blurb,
+#wizard .policy-group-note {
+  color: #3a5368;
+}
+#wizard .policy-group {
+  border-color: rgba(18, 108, 153, .18);
+  background: #f7fcff;
 }
 
 #wizard .cam-wrap {

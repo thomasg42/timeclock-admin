@@ -943,15 +943,46 @@
     };
   }
 
-  function renderPolicyAckHtml(packs) {
-    return (packs || []).map((pack) => {
-      const full = (pack.sections || []).map((s) => `<h5>${esc(s.h)}</h5>${esc(s.body)}`).join('');
-      return `<div class="policy-block">
-        <h4>${esc(pack.title)}</h4>
-        <ul>${(pack.bullets || []).map((b) => `<li>${esc(b)}</li>`).join('')}</ul>
-        ${full ? `<div class="policy-full">${full}</div>` : ''}
-      </div>`;
+  function renderPolicyListHtml(items) {
+    if (!items || !items.length) return '';
+    return `<ul>${items.map((item) => `<li>${esc(item)}</li>`).join('')}</ul>`;
+  }
+  function renderPolicySectionHtml(section) {
+    const note = section.note ? `<p class="policy-group-note">${esc(section.note)}</p>` : '';
+    const body = section.body ? esc(section.body) : '';
+    const groups = (section.groups || []).map((g) => {
+      const gNote = g.note ? `<p class="policy-group-note">${esc(g.note)}</p>` : '';
+      return `<div class="policy-group"><h6>${esc(g.h)}</h6>${gNote}${renderPolicyListHtml(g.items)}</div>`;
     }).join('');
+    return `<h5>${esc(section.h)}</h5>${note}${body}${renderPolicyListHtml(section.items)}${groups}`;
+  }
+  function packHasChecklists(pack) {
+    return (pack.sections || []).some((s) =>
+      (s.items && s.items.length) || (s.groups && s.groups.length)
+    );
+  }
+  function renderPolicyBlockHtml(pack, { expandable } = {}) {
+    const blurb = pack.blurb ? `<p class="policy-blurb">${esc(pack.blurb)}</p>` : '';
+    const bullets = renderPolicyListHtml(pack.bullets);
+    const full = (pack.sections || []).map(renderPolicySectionHtml).join('');
+    const open = packHasChecklists(pack);
+    let body = '';
+    if (full) {
+      if (open || !expandable) {
+        body = `<div class="policy-full${open ? ' policy-full-open' : ''}">${full}</div>`;
+      } else {
+        body = `<details><summary>FULL POLICY — READ WORD FOR WORD</summary><div class="policy-full">${full}</div></details>`;
+      }
+    }
+    return `<div class="policy-block">
+      <h4>${esc(pack.title)}</h4>
+      ${blurb}
+      ${bullets}
+      ${body}
+    </div>`;
+  }
+  function renderPolicyAckHtml(packs) {
+    return (packs || []).map((pack) => renderPolicyBlockHtml(pack, { expandable: false })).join('');
   }
 
   function frameToJpeg(source, w, h) {
@@ -1076,11 +1107,147 @@
         { h: 'Section 3 — Skyboxes & Crowd Control', body: 'Skyboxes are lanyard-only. Skybox 1 closest to entrance; 1–4 first bleacher set; 5–7 next; 8–10 far end by GA. Number is on bottom-left of lanyard. Sky View Platform is the tallest separate section — wristband-only guests not allowed; stop lanyard hand-offs.\n\nBleachers: check lanyard/wristband on the walk path. After show starts, no one against the rail blocking views. Escalation after two warnings: call on walkie with position (South/East/North bleachers) for backup/escort.' },
       ],
     },
+    vip: {
+      id: 'vip',
+      title: 'VIP Policy',
+      blurb: 'VIP Barber & Whisky Lounge — opening and closing lists. Scan, work, done.',
+      bullets: [
+        'Never leave a dirty bar.',
+        'Never skip cash reconciliation.',
+      ],
+      sections: [
+        {
+          h: 'OPENING PROCEDURES',
+          groups: [
+            { h: 'Security + Entry', items: [
+              'Unlock doors / Check cameras / Lights on',
+              'Check for overnight issues (leaks, smell, power)',
+              'Open blinds',
+              'Water plants',
+            ] },
+            { h: 'Clean + Reset', items: [
+              'Wipe all surfaces (bar top, prep, sinks, tables, convenient store wipe down)',
+              'Empty trash if needed',
+              'Restrooms quick check',
+              'Remove clutter',
+              'Set up seating outside and any other outdoor setups',
+              'Organize Convenient Store / Restock',
+            ] },
+            { h: 'Bar Setup', items: [
+              'Fill main ice bins / Make spheres',
+              'Cut fresh citrus',
+              'Restock napkins',
+              'Set tools: shaker, jigger, bar spoon, etc.',
+              'Polish 10–12 of each key glass',
+              'Stage upside down, ready for speed',
+            ] },
+            { h: 'Liquor + Beer Check', items: [
+              'Face all bottles and cans (labels forward, clean look)',
+              'Restock wells',
+              'Check cooler / Remove empties',
+            ] },
+            { h: 'Cash + POS', items: [
+              'Grab drawer from back / Count drawer',
+              'Set starting bank / Log it',
+              'Turn on Square reader',
+            ] },
+            {
+              h: 'Experience Check',
+              note: 'Stand where the customer stands:',
+              items: [
+                'Does it look clean / Is lighting right? (Daytime bright fun, night time warmer darker)',
+              ],
+            },
+            { h: 'Open Doors', items: [
+              'Music on / Smile on / Guest gets attention immediately',
+            ] },
+            {
+              h: 'Greeting — customers and barber clients (first 10 seconds)',
+              items: [
+                '“Welcome in. You drinking whiskey tonight or feeling something lighter?”',
+              ],
+            },
+            {
+              h: 'Order Upgrade',
+              note: 'Customer: “I’ll take a whiskey.”',
+              items: [
+                'Response: “Want to keep it clean or go Old Fashioned?”',
+              ],
+            },
+            { h: 'Add-on Script', items: [
+              '“Want to add a beer with that?” “Want to add a Shot?” / “How Bout a Double?”',
+              '“You want one more before your cut/service is finished?”',
+            ] },
+            { h: 'Weekly Premium Push', items: [
+              '“McCallan normally $40. It’s $20 this week. Totally Worth it.”',
+            ] },
+          ],
+        },
+        {
+          h: 'CLOSING PROCEDURES',
+          groups: [
+            { h: 'Last Call (30 min before close)', items: [
+              'Announce clearly / Push final round / Start soft cleanup',
+            ] },
+            { h: 'Bar Breakdown — Liquor', items: [
+              'Return to proper positions',
+              'Note anything low',
+            ] },
+            { h: 'Bar Breakdown — Beer + Cooler', items: [
+              'Consolidate / Face product / Remove empties',
+            ] },
+            { h: 'Cash Out', items: [
+              'Count drawer',
+              'Add profits to Safe in Back',
+              'Log totals Cash / Credit / Comp',
+            ] },
+            { h: 'Cleaning — Bar Area', items: [
+              'Wipe all surfaces',
+              'Clean sinks',
+              'Empty trash',
+            ] },
+            { h: 'Cleaning — Glassware', items: [
+              'Wash all remaining',
+              'Air dry properly',
+            ] },
+            { h: 'Cleaning — Floors', items: [
+              'Sweep',
+              'Mop (especially behind bar)',
+            ] },
+            { h: 'Restock for Tomorrow', items: [
+              'Refill napkins',
+              'Stage glassware',
+              'Wrap garnishes & add to cooler',
+            ] },
+            { h: 'Inventory Quick Check (5 min)', items: [
+              'What ran low?',
+              'What sold best?',
+              'What needs ordering?',
+            ] },
+            { h: 'Shutdown', items: [
+              'Turn off: Lights / Equipment',
+              'Move cash drawer to back',
+              'Lock doors',
+            ] },
+            { h: 'Non-Negotiables', items: [
+              'Never leave a dirty bar',
+              'Never skip cash reconciliation',
+            ] },
+          ],
+        },
+      ],
+    },
   };
   const DEFAULT_TEMPLATES = [
     { id: 'tpl-pbr', name: 'PBR / Rodeo — Big Sky', policyKeys: ['general', 'pbr'] },
+    { id: 'tpl-vip', name: 'VIP Barber & Whisky Lounge', policyKeys: ['vip'] },
   ];
 
+  function isVipLoungeName(name) {
+    const n = String(name || '');
+    if (/\bpbr\b|rodeo/i.test(n)) return false;
+    return /\bvip\b|whisky|whiskey|barber/i.test(n);
+  }
   function normalizePolicyKeys(val) {
     if (Array.isArray(val)) return val.filter((k) => POLICY_PACKS[k]);
     if (typeof val === 'string' && POLICY_PACKS[val]) return [val];
@@ -1130,7 +1297,7 @@
 
   // The four Thomas asked to keep (2026-08-26). Everything else in Choose Event
   // at that point was test junk — PBR1, Real Test Event, Webhook Test Event.
-  const CLEANUP_V1_KEEP = ['pbr / rodeo — big sky', 'wildlands', 'music in the mountains', 'rbar'];
+  const CLEANUP_V1_KEEP = ['pbr / rodeo — big sky', 'wildlands', 'music in the mountains', 'rbar', 'vip barber & whisky lounge'];
 
   function loadMeta() {
     try {
@@ -1171,6 +1338,12 @@
       if (!templates.some((t) => /pbr|rodeo/i.test(t.name))
         && !isTemplateDeleted(deletedTemplates, DEFAULT_TEMPLATES[0].name)) {
         templates = [DEFAULT_TEMPLATES[0], ...templates];
+      }
+      const vipTpl = DEFAULT_TEMPLATES.find((t) => t.id === 'tpl-vip');
+      if (vipTpl
+        && !templates.some((t) => isVipLoungeName(t.name))
+        && !isTemplateDeleted(deletedTemplates, vipTpl.name)) {
+        templates = [...templates, { ...vipTpl, policyKeys: vipTpl.policyKeys.slice() }];
       }
       const out = {
         deletedTemplates,
@@ -1586,6 +1759,7 @@
     'Wildlands',
     'Music in the mountains',
     'Rbar',
+    'VIP Barber & Whisky Lounge',
   ];
 
   /* Event names are compared loosely on purpose: the standing list carries an
@@ -1671,6 +1845,7 @@
     const tpl = meta.templates.find((t) => t.name.toLowerCase() === String(ev.name || '').toLowerCase());
     if (tpl && tpl.policyKeys.length) return tpl.policyKeys.map((k) => POLICY_PACKS[k]).filter(Boolean);
     if (/\bpbr\b|rodeo/i.test(ev.name || '')) return [POLICY_PACKS.general, POLICY_PACKS.pbr];
+    if (isVipLoungeName(ev.name)) return [POLICY_PACKS.vip];
     // A standing job always carries at least the general handbook, even on a
     // device that has never seen its template. Templates are not seeded, so
     // without this a standing chip could clock someone in under no policies at
@@ -1707,14 +1882,7 @@
   function renderPolicyHtml(packs) {
     const list = Array.isArray(packs) ? packs : (packs ? [packs] : []);
     if (!list.length) return '<p class="muted">No policies attached to this event yet.</p>';
-    return list.map((pack) => {
-      const full = (pack.sections || []).map((s) => `<h5>${esc(s.h)}</h5>${esc(s.body)}`).join('');
-      return `<div class="policy-block">
-        <h4>${esc(pack.title)}</h4>
-        <ul>${(pack.bullets || []).map((b) => `<li>${esc(b)}</li>`).join('')}</ul>
-        ${full ? `<details><summary>FULL POLICY — READ WORD FOR WORD</summary><div class="policy-full">${full}</div></details>` : ''}
-      </div>`;
-    }).join('');
+    return list.map((pack) => renderPolicyBlockHtml(pack, { expandable: true })).join('');
   }
 
   /* ============================================================
